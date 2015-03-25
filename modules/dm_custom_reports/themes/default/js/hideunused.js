@@ -66,6 +66,20 @@ function changeReport() {
         hide('agent');
         hide('queue_in');
         hide('queue_out');
+        show('span');
+    }
+    if(selectedValue == 'agentlogin') {
+        hide('ivr');
+        show('agent');
+        show('queue_in');
+        show('queue_out');
+        hide('span');
+    }
+    if(selectedValue == 'agentbreak') {
+        hide('ivr');
+        show('agent');
+        hide('queue_in');
+        hide('queue_out');
         hide('span');
     }
 }

@@ -42,7 +42,6 @@ class Custom_Reports{
 
     function Custom_Reports(&$pDB)
     {
-        // Se recibe como parámetro una referencia a una conexión paloDB
         if (is_object($pDB)) {
             $this->_DB =& $pDB;
             $this->errMsg = $this->_DB->errMsg;
@@ -52,9 +51,7 @@ class Custom_Reports{
 
             if (!$this->_DB->connStatus) {
                 $this->errMsg = $this->_DB->errMsg;
-                // debo llenar alguna variable de error
             } else {
-                // debo llenar alguna variable de error
             }
         }
     }
@@ -105,10 +102,18 @@ class Custom_Reports{
     }
 
     // Список агентов
-    function getAgents()
+    function getAgents($id = false)
     {
-        $query   = "SELECT id, name FROM agent";
-        $result=$this->_DB->fetchTable($query, true);
+        $query   = "SELECT id, name, number FROM agent";
+        if ($id)
+        {
+            $query .= " WHERE id = ?";
+            $params = array($id);
+        } else
+        {
+            $params = array();
+        }
+        $result=$this->_DB->fetchTable($query, true, $params);
 
         if($result==FALSE){
             $this->errMsg = $this->_DB->errMsg;
@@ -122,6 +127,20 @@ class Custom_Reports{
     function getIvrs()
     {
         $query   = "SELECT DISTINCT ivr_id, ivr_name FROM ivr_log";
+        $result=$this->_DB->fetchTable($query, true);
+
+        if($result==FALSE){
+            $this->errMsg = $this->_DB->errMsg;
+            return array();
+        }
+
+        return $result;
+    }
+
+    // Список IVR с данными
+    function getBreaks()
+    {
+        $query   = "SELECT id, name FROM break";
         $result=$this->_DB->fetchTable($query, true);
 
         if($result==FALSE){
@@ -194,9 +213,41 @@ class Custom_Reports{
                 break;
 
             case 'volvo':
-                    $result = array("total_in", "total_accept", "left_ivr", "not_respond", "total_night", "mondeal_night", "voice_mail", "time_calls");
-                    $this->action = 'volvo';
-                    break;
+                switch($this->span)
+                {
+                    case 'ring':
+                    case 'hour':
+                        $result = array("Not implemented");
+                        break;
+                    case "mon":
+                    case "week":
+                    case 'day':
+                        $result = array("time", "total_in", "total_accept", "left_ivr", "not_respond", "total_night", "mondeal_night", "voice_mail", "time_calls");
+                        $this->action = 'volvo_span';
+                        break;
+                    default:
+                        $result = array("total_in", "total_accept", "left_ivr", "not_respond", "total_night", "mondeal_night", "voice_mail", "time_calls");
+                        $this->action = 'volvo';
+                        break;
+                }
+                break;
+
+            case 'agentlogin':
+                $result = array("agent", "agent_name", "login_time", "agent_calls", "total_calls", "performance");
+                $this->action = 'agentlogin';
+                break;
+
+            case 'agentbreak':
+                $result = array("time", "agent_name");
+                //add breaks name row
+                $breaks = $this->getBreaks();
+                foreach ($breaks as $break)
+                {
+                    $result[] = $break['name'];
+                }
+                $result = array_merge($result, array("duration", "percent_work"));
+                $this->action = "agentbreak";
+                break;
         }
 
         return $result;
@@ -253,8 +304,20 @@ class Custom_Reports{
                 $result[0] = $res;
                 break;
 
-            case 'volvo';
-                $result = $this->getVolvoData();
+            case 'volvo':
+                $result = $this->getVolvoPercent();
+                break;
+
+            case 'volvo_span':
+                $result = $this->getPeriodData();
+                break;
+
+            case 'agentlogin':
+                $result = $this->getAgentLogin();
+                break;
+
+            case 'agentbreak':
+                $result = $this->getAgentBreak();
                 break;
         }
 
@@ -270,14 +333,20 @@ class Custom_Reports{
         {
             case "hour":
                 $this->date_start = date("Y-m-d H:i:s",strtotime(date("Y-m-d H",strtotime($this->date_start)).":00:00"));
-                $this->date_end = date("Y-m-d H:i:s",strtotime(date("Y-m-d H",strtotime($this->date_end)).":00:00"));
+                $this->date_end = date("Y-m-d H:i:s",strtotime(date("Y-m-d H",strtotime($this->date_end)).":59:59"));
                 $format ="d.m.y H:i";
                 break;
 
             case "day":
                 $this->date_start = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_start))." 00:00:00"));
-                $this->date_end = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_end))." 00:00:00"));
+                $this->date_end = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_end))." 23:59:59"));
                 $format = "d.m.y";
+                break;
+
+            case "week":
+                $this->date_start = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_start))." 00:00:00"));
+                $this->date_end = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_end))." 23:59:59"));
+                $format = "W";
                 break;
 
             case "mon":
@@ -300,32 +369,46 @@ class Custom_Reports{
 
             switch($this->span)
             {
+                // 3600 - секунд в часе, 86400 - секунд в сутках
                 case 'hour':
-                    $this->date_end = date("Y-m-d H:i:s", ($date_start += 3600)-1);
+                    $this->date_end = date("Y-m-d H:i:s", ($date_start += 3600) - 1);
                     break;
                 case 'day':
-                    $this->date_end = date("Y-m-d H:i:s", ($date_start += 86400)-1);
+                    $this->date_end = date("Y-m-d H:i:s", ($date_start += 86400) - 1);
+                    break;
+                case 'week';
+                    //ToDo Конец недели указать то что выбрали (проверить не больше ли выбранного получившееся)
+                    $lastweekday = date("Y-m-d H:i:s", ($date_start += (8 - date('N',$date_start)) * 86400) - 1);
+                    if($date_start<$sum_end)
+                        $this->date_end = $lastweekday;
+                    else
+                        $this->date_end = date("Y-m-d H:i:s", $sum_end);
                     break;
                 case 'mon';
-                    $this->date_end = date("Y-m-d H:i:s", ($date_start += date('t',$date_start)*86400)-1);
+                    $this->date_end = date("Y-m-d H:i:s", ($date_start += date('t',$date_start) * 86400) - 1);
                     break;
             }
 
-            $this->date_end = date("Y-m-d H:i:s", $date_start-1);
+            //$this->date_end = date("Y-m-d H:i:s", $date_start-1);
 
+            //Это хоть и не красиво... но тупо так берем данные
             if ($this->report == 'calls') $res = $this->getCallsData();
             if ($this->report == 'oncalls') $res = $this->getOnCalls();
             if ($this->report == 'ivr') $res = $this->getIvrData();
+            if ($this->report == 'volvo') $res = $this->getVolvoData();
             if ($res) {
                 $res['time'] = str_replace(" ","&nbsp;",date($format, strtotime($this->date_start)));
                 $result[] = $res;
             }
         }
+
+        // ...а так итоговую строку
         $this->date_start = date("Y-m-d H:i:s",$sum_start);
         $this->date_end = date("Y-m-d H:i:s", $sum_end);
         if ($this->report == 'calls') $sum = $this->getCallsData();
         if ($this->report == 'oncalls') $sum = $this->getOnCalls();
         if ($this->report == 'ivr') $sum = $this->getIvrData();
+        if ($this->report == 'volvo') $sum = $this->getVolvoData();
         $sum['time'] = '<b>'._tr("Total").'</b>';
         $result[] = $sum;
 
@@ -333,144 +416,154 @@ class Custom_Reports{
     }
 
 // ******************************* Отчеты отдающие по строке за заданный период ****************************************
+    function getAgentLogin()
+    {
+        // Отчет за день, режем часы, минуты и секунды и все это в секунды от рождества Юниксова
+        $start_time = strtotime(date("Y-m-d H:i:s", strtotime(date("Y-m-d", strtotime($this->date_start)) . " 00:00:00")));
+        $end_time = strtotime(date("Y-m-d H:i:s", strtotime(date("Y-m-d", strtotime($this->date_end)) . " 23:59:59")));
 
-    // Странный отчет для проекта Volvo
-    function getVolvoData()
+        if ($this->agent == '') $agents = $this->getAgents();
+        else $agents = $this->getAgents($this->agent);
+        $result = array();
+        $i = 0;
+        foreach($agents as $agent)
+        {
+            $time_s = $start_time;
+            while ($time_s < $end_time)
+            {
+                $time_e = $time_s + 86400 - 1;
+
+                $result[$i]['agent'] = $agent['number'];
+                $result[$i]['agent_name'] = $agent['name'];
+
+                // Время логина
+                $query = "SELECT MIN(datetime_init)
+                         FROM audit
+                         WHERE
+                              (datetime_init BETWEEN ? AND ?)
+                              AND
+                               id_break IS NULL
+                              AND
+                               id_agent = ?
+                       ";
+                $params = array(
+                    date("Y-m-d H:i:s", $time_s),
+                    date("Y-m-d H:i:s", $time_e),
+                    $agent['id']
+                );
+                $res = $this->_DB->getFirstRowQuery($query, false, $params);
+                $result[$i]["login_time"] = $res[0];
+                if($result[$i]["login_time"] != '') $result[$i]["login_time"] = date("d.m.Y H:i:s", strtotime($result[$i]["login_time"]));
+
+                //Всего звонков за день
+                $query = "SELECT COUNT(*)
+                            FROM call_progress_log
+                            WHERE (datetime_entry  BETWEEN ? AND ?)";
+
+                $params = array(date("Y-m-d H:i:s", $time_s), date("Y-m-d H:i:s", $time_e));
+
+                $campaignWhere = $this->buildCampaignWhere();
+                if ($campaignWhere['where'] != '')
+                {
+                    $query .= " AND ".$campaignWhere['where'];
+                    $params = array_merge($params, $campaignWhere['params']);
+                }
+                $q = $query." AND (new_status = 'OnQueue' OR new_status = 'Ringing')";
+                $res = $this->_DB->getFirstRowQuery($q, false, $params);
+                $result[$i]["total_calls"] = $res[0];
+
+                //Принятых звонков за день
+                $query .= ' AND id_agent = ?';
+                $q = $query.' AND (NOT duration IS NULL)';
+                array_push($params, $agent['id']);
+                $res = $this->_DB->getFirstRowQuery($q, false, $params);
+
+                $result[$i]["agent_calls"] = $res[0];
+
+                //КПД за день
+                $result[$i]["performance"] = round(($result[$i]["agent_calls"]/$result[$i]["total_calls"])*100, 2).'%';
+
+                $time_s = $time_e + 1;
+                if($result[$i]["login_time"] != '')
+                {
+                    ++$i;
+                } else {
+                    unset($result[$i]);
+                }
+            }
+        }
+
+
+        return $result;
+    }
+
+    function getAgentBreak()
     {
         // Отчет за день, посему режем часы, минуты и секунды
-        $this->date_start = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_start))." 00:00:00"));
-        $this->date_end = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_end))." 23:59:59"));
+        $start_time = strtotime(date("Y-m-d H:i:s", strtotime(date("Y-m-d", strtotime($this->date_start)) . " 00:00:00")));
+        $end_time = strtotime(date("Y-m-d H:i:s", strtotime(date("Y-m-d", strtotime($this->date_end)) . " 23:59:59")));
 
-        // Total incoming calls ----------------------------------------------------------------------------------------
-        $query = "SELECT COUNT(DISTINCT call_id)
-                         FROM ivr_log
-                         WHERE
-                              (calldatetime BETWEEN ? AND ?)
-                              AND
-                               pressed_key = 's'
-                              AND
-                               (ivr_id = '3' OR ivr_id = '4')
-                               "; // 3 и 4 id дневного и ночного ivr
-        $params = array(
-            $this->date_start,
-            $this->date_end,
+        if ($this->agent == '') $agents = $this->getAgents();
+        else $agents = $this->getAgents($this->agent);
+        $breaks = $this->getBreaks();
+        $result = array();
+        $i = 0;
+        foreach($agents as $agent) {
+            $time_s = $start_time;
+            while ($time_s < $end_time) {
+                $time_e = $time_s + 86400 - 1;
 
-        );
-        $res = $this->_DB->getFirstRowQuery($query,false, $params);
-        $result[0]['total_in'] = $res[0];
+                $result[$i]["time"] = date("d.m.Y", $time_s);
+                $result[$i]["agent_name"] = $agent['name'];
 
-        // Total accepted calls ----------------------------------------------------------------------------------------
-        $query = "SELECT COUNT(DISTINCT uniqueid)
-                         FROM call_entry
-                         WHERE
-                              (datetime_entry_queue BETWEEN ? AND ?)
-                              AND
-                               status = 'terminada'
-                              AND
-                               id_campaign = '1'
-                               ";
-        $params = array(
-            $this->date_start,
-            $this->date_end,
-        );
-        $res = $this->_DB->getFirstRowQuery($query,false, $params);
-        $result[0]['total_accept'] = $res[0];
+                // Время перерывов за день
+                $query = "SELECT id_break as id, SUM(TIME_TO_SEC(duration)) as duration
+                          FROM audit
+                          WHERE
+                              (datetime_init BETWEEN ? AND ?)
+                                AND
+                               id_agent = ?
+                          GROUP BY id_break
+                       ";
+                $params = array(
+                    date("Y-m-d H:i:s", $time_s),
+                    date("Y-m-d H:i:s", $time_e),
+                    $agent['id']
+                );
+                $res = $this->_DB->fetchTable($query, true, $params);
 
-        // Left while IVR on -------------------------------------------------------------------------------------------
-        $query = "SELECT COUNT(DISTINCT call_id) FROM
-                         (SELECT call_id, COUNT(*)
-                                 FROM ivr_log
-                                 WHERE
-                                      (calldatetime BETWEEN ? AND ?)
-                                      AND
-                                       ivr_id = '3'
-                                 GROUP BY call_id HAVING COUNT(*) = '1')q
-                                 ";
-        $params = array(
-            $this->date_start,
-            $this->date_end
-        );
-        $res = $this->_DB->getFirstRowQuery($query,false, $params);
-        $result[0]['left_ivr'] = $res[0];
+                $br = array();
+                foreach($res as $r)
+                {
+                    $br[$r['id']] = $r['duration'];
+                }
+                $duration = 0;
+                foreach ($breaks as $break) {
+                    $result[$i][$break['name']] = isset($br[$break['id']])?$this->convertSec($br[$break['id']]):'-';
+                    $duration = $duration + $br[$break['id']];
+                }
 
-        // Not responded -----------------------------------------------------------------------------------------------
-        $query = "SELECT COUNT(DISTINCT uniqueid)
-                         FROM call_entry
-                         WHERE
-                              (datetime_entry_queue BETWEEN ? AND ?)
-                             AND
-                              status = 'abandonada'
-                             AND
-                              id_campaign = '1'
-                              ";
-        $params = array(
-            $this->date_start,
-            $this->date_end,
-        );
-        $res = $this->_DB->getFirstRowQuery($query,false, $params);
-        $result[0]['not_respond'] = $res[0];
+                $result[$i]["duration"] = $this->convertSec($duration);
+                $result[$i]["percent_work"] = round(($duration/(510*60))*100, 2).'%';
 
-        // Total night time calls (20.00-09.00) ------------------------------------------------------------------------
-        $query = "SELECT COUNT(DISTINCT call_id)
-                         FROM ivr_log
-                         WHERE
-                              ((hour(calldatetime) BETWEEN '0' AND '9') OR (hour(calldatetime) BETWEEN '20' AND '23'))
-                             AND
-                              calldatetime BETWEEN ? AND ?
-                             AND
-                              pressed_key = 's'
-                             AND
-                              ivr_id = '4'
-                              ";
-        $params = array(
-            $this->date_start,
-            $this->date_end
-        );
-        $res = $this->_DB->getFirstRowQuery($query,false, $params);
-        $result[0]['total_night'] = $res[0];
+                $time_s = $time_e + 1;
+                if ($duration != 0)
+                {
+                    ++$i;
+                } else {
+                    unset($result[$i]);
+                }
+            }
+        }
 
-        // Mondeal "night time"(20.00-09.00) ---------------------------------------------------------------------------
-        $query = "SELECT COUNT(DISTINCT call_id)
-                         FROM ivr_log
-                         WHERE
-                             ((hour(calldatetime) BETWEEN '0' AND '9') OR (hour(calldatetime) BETWEEN '20' AND '23'))
-                            AND
-                             calldatetime BETWEEN ? AND ?
-                            AND
-                             pressed_key = '1'
-                            AND
-                             ivr_id = '4'
-                             ";
-        $params = array(
-            $this->date_start,
-            $this->date_end
-        );
-        $res = $this->_DB->getFirstRowQuery($query,false, $params);
-        $result[0]['mondeal_night'] = $res[0];
+        return $result;
+    }
 
-        // Voice mail --------------------------------------------------------------------------------------------------
-        $query = "SELECT COUNT(DISTINCT call_id)
-                         FROM ivr_log
-                         WHERE
-                              ((hour(calldatetime) BETWEEN '0' AND '9') OR (hour(calldatetime) BETWEEN '20' AND '23'))
-                             AND
-                              calldatetime BETWEEN ? AND ?
-                             AND
-                              pressed_key = '2'
-                             AND
-                              ivr_id = '4'
-                              ";
-        $params = array(
-            $this->date_start,
-            $this->date_end
-        );
-        $res = $this->_DB->getFirstRowQuery($query,false, $params);
-        $result[0]['voice_mail'] = $res[0];
+    // Странный отчет для проекта Volvo
 
-        // Night time calls (20.00-09.00) ------------------------------------------------------------------------------
-        $result[0]['time_calls'] = $result[0]['total_night'] - ($result[0]['mondeal_night'] + $result[0]['voice_mail']);
-
-
+    function getVolvoPercent()
+    {
+        $result[0] = $this->getVolvoData();
 
         // А теперь посчитаем проценты ---------------------------------------------------------------------------------
         $result[1]['total_in'] = '100%';
@@ -495,6 +588,144 @@ class Custom_Reports{
 
         $result[1]['time_calls'] = ($result[0]['time_calls'] / $result[0]['total_in']) * 100;
         $result[1]['time_calls'] = round($result[1]['time_calls']).'%';
+
+        return $result;
+    }
+
+    function getVolvoData()
+    {
+        // Отчет за день, посему режем часы, минуты и секунды
+        $this->date_start = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_start))." 00:00:00"));
+        $this->date_end = date("Y-m-d H:i:s",strtotime(date("Y-m-d",strtotime($this->date_end))." 23:59:59"));
+
+        // Total incoming calls ----------------------------------------------------------------------------------------
+        $query = "SELECT COUNT(DISTINCT call_id)
+                         FROM ivr_log
+                         WHERE
+                              (calldatetime BETWEEN ? AND ?)
+                              AND
+                               pressed_key = 's'
+                              AND
+                               (ivr_id = '3' OR ivr_id = '4')
+                               "; // 3 и 4 id дневного и ночного ivr
+        $params = array(
+            $this->date_start,
+            $this->date_end,
+
+        );
+        $res = $this->_DB->getFirstRowQuery($query,false, $params);
+        $result['total_in'] = $res[0];
+
+        // Total accepted calls ----------------------------------------------------------------------------------------
+        $query = "SELECT COUNT(DISTINCT uniqueid)
+                         FROM call_entry
+                         WHERE
+                              (datetime_entry_queue BETWEEN ? AND ?)
+                              AND
+                               status = 'terminada'
+                              AND
+                               id_campaign = '1'
+                               ";
+        $params = array(
+            $this->date_start,
+            $this->date_end,
+        );
+        $res = $this->_DB->getFirstRowQuery($query,false, $params);
+        $result['total_accept'] = $res[0];
+
+        // Left while IVR on -------------------------------------------------------------------------------------------
+        $query = "SELECT COUNT(DISTINCT call_id) FROM
+                         (SELECT call_id, COUNT(*)
+                                 FROM ivr_log
+                                 WHERE
+                                      (calldatetime BETWEEN ? AND ?)
+                                      AND
+                                       ivr_id = '3'
+                                 GROUP BY call_id HAVING COUNT(*) = '1')q
+                                 ";
+        $params = array(
+            $this->date_start,
+            $this->date_end
+        );
+        $res = $this->_DB->getFirstRowQuery($query,false, $params);
+        $result['left_ivr'] = $res[0];
+
+        // Not responded -----------------------------------------------------------------------------------------------
+        $query = "SELECT COUNT(DISTINCT uniqueid)
+                         FROM call_entry
+                         WHERE
+                              (datetime_entry_queue BETWEEN ? AND ?)
+                             AND
+                              status = 'abandonada'
+                             AND
+                              id_campaign = '1'
+                              ";
+        $params = array(
+            $this->date_start,
+            $this->date_end,
+        );
+        $res = $this->_DB->getFirstRowQuery($query,false, $params);
+        $result['not_respond'] = $res[0];
+
+        // Total night time calls (20.00-09.00) ------------------------------------------------------------------------
+        $query = "SELECT COUNT(DISTINCT call_id)
+                         FROM ivr_log
+                         WHERE
+                              ((hour(calldatetime) BETWEEN '0' AND '9') OR (hour(calldatetime) BETWEEN '20' AND '23'))
+                             AND
+                              calldatetime BETWEEN ? AND ?
+                             AND
+                              pressed_key = 's'
+                             AND
+                              ivr_id = '4'
+                              ";
+        $params = array(
+            $this->date_start,
+            $this->date_end
+        );
+        $res = $this->_DB->getFirstRowQuery($query,false, $params);
+        $result['total_night'] = $res[0];
+
+        // Mondeal "night time"(20.00-09.00) ---------------------------------------------------------------------------
+        $query = "SELECT COUNT(DISTINCT call_id)
+                         FROM ivr_log
+                         WHERE
+                             ((hour(calldatetime) BETWEEN '0' AND '9') OR (hour(calldatetime) BETWEEN '20' AND '23'))
+                            AND
+                             calldatetime BETWEEN ? AND ?
+                            AND
+                             pressed_key = '1'
+                            AND
+                             ivr_id = '4'
+                             ";
+        $params = array(
+            $this->date_start,
+            $this->date_end
+        );
+        $res = $this->_DB->getFirstRowQuery($query,false, $params);
+        $result['mondeal_night'] = $res[0];
+
+        // Voice mail --------------------------------------------------------------------------------------------------
+        $query = "SELECT COUNT(DISTINCT call_id)
+                         FROM ivr_log
+                         WHERE
+                              ((hour(calldatetime) BETWEEN '0' AND '9') OR (hour(calldatetime) BETWEEN '20' AND '23'))
+                             AND
+                              calldatetime BETWEEN ? AND ?
+                             AND
+                              pressed_key = '2'
+                             AND
+                              ivr_id = '4'
+                              ";
+        $params = array(
+            $this->date_start,
+            $this->date_end
+        );
+        $res = $this->_DB->getFirstRowQuery($query,false, $params);
+        $result['voice_mail'] = $res[0];
+
+        // Night time calls (20.00-09.00) ------------------------------------------------------------------------------
+        $result['time_calls'] = $result['total_night'] - ($result['mondeal_night'] + $result['voice_mail']);
 
         return $result;
     }

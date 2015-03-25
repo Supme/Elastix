@@ -34,6 +34,7 @@ $arrLangModule=array(
 "Show" => "Показать",
 "All" => "Все",
 "Mounth" => "Месяц",
+"Week" => "Неделя",
 "Day" => "День",
 "Hour" => "Час",
 "Ring" => "Звонок",
@@ -90,5 +91,13 @@ $arrLangModule=array(
 "Placing" => "Установление" ,
 "Ringing" => "Вызов",
 "ShortCall" => "Короткий звонок",
+"agent_name" => "Имя агента",
+"login_time" => "Время первого входа",
+"agent_calls" => "Обработано агентом",
+"total_calls" => "Всего попало в очередь",
+"performance" => "КПД агента",
+"percent_work" => "Процент от работы",
+"AgentLogin" => "Заходы агентов",
+"AgentBreak" => "Перерывы агентов",
 );
 ?>

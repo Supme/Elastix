@@ -86,6 +86,8 @@ function _moduleContent(&$smarty, $module_name)
 
 function reportCustom_Reports($smarty, $module_name, $local_templates_dir, &$pDB, $arrConf)
 {
+$start = microtime(true);
+
     $pCustom_Reports = new Custom_Reports($pDB);
 
     //Параметры для грида
@@ -113,7 +115,7 @@ function reportCustom_Reports($smarty, $module_name, $local_templates_dir, &$pDB
         "report"    => getParameter("report"),
         "span"      => getParameter("span"),
         "agent"     => getParameter("agent"),
-        "ivr"       => getParameter('ivr')
+        "ivr"       => getParameter('ivr'),
     );
 
     // Передаем параметры фильтру
@@ -143,6 +145,8 @@ function reportCustom_Reports($smarty, $module_name, $local_templates_dir, &$pDB
     $oGrid->setColumns($arrColumns);
     $oGrid->setTitle(_tr("Custom Reports"));
     $oGrid->setNameFile_Export(_tr("report"));
+
+//printf('Скрипт выполнялся %.4F сек.', microtime(true) - $start);
 
     // Так как с штатным экспортом отчетов проблема, перехватываем стандартный экспорт и делаем свой...
     // ToDo Когда наладят можно убрать
@@ -188,12 +192,15 @@ function createFieldFilter($campaign_in, $campaign_out, $agents, $ivrs){
         'calls'          =>  _tr('Calls'),
         'oncalls'   =>  _tr('onCalls'),
         'ivr' =>  _tr('IVR'),
+        'agentlogin' => _tr('AgentLogin'),
+        'agentbreak' => _tr('AgentBreak'),
         'volvo' => _tr('Volvo'),
     );
 
     $arrSpan = array(
         ''          =>  '('._tr('All').')',
         'mon'       =>  _tr('Mounth'),
+        'week'      =>  _tr('Week'),
         'day'       =>  _tr('Day'),
         'hour'      =>  _tr('Hour'),
         'ring'      =>  _tr('Ring'),
