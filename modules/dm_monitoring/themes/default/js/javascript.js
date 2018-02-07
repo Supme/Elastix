@@ -24,8 +24,8 @@ $(document).ready(function() {
     loadOper();
     loadStat();
 
-    setInterval(function(){loadOper()}, 1000);
-    setInterval(function(){loadStat()}, 5000);
+    setInterval(function(){loadOper()}, 3000);
+    setInterval(function(){loadStat()}, 10000);
 
 });
 

@@ -135,16 +135,27 @@ function viewOperMonitoring($smarty, $module_name, $local_templates_dir, &$pDB, 
     $res_online_agents = array();
     $res_offline_agents = array();
     foreach($result["agents"] as $key => $res){
-        if($res['status'] != 'offline')
+        $sip = '<strong>'.$agents[$key].'</strong> <small>'.$key.'</small>';
+        if($res['status'] == 'offline')
         {
+            $res_offline_agents[$sip] = $result["agents"][$key];
+            $res_offline_agents[$sip]['status'] = _tr($res["status"]);
+            $res_offline_agents['</strong> '.$sip]['lenght'] = NULL;
+
+        } else {
             /* Добавим к перерыву название перерыва
-            if($res['status'] == 'paused')
-                $result["agents"][$key]["status"] = _tr("paused").'('.$res["pausename"].')';
-            else
-                $result["agents"][$key]["status"] = _tr($res["status"]);
-            */
+                        if($res['status'] == 'paused')
+                            $result["agents"][$key]["status"] = _tr("paused").'('.$res["pausename"].')';
+                        else
+                            $result["agents"][$key]["status"] = _tr($res["status"]);
+                        */
             // Не будем добавлять слово "Перерыв"
-            $result["agents"][$key]["status"] = $res['status'] == 'paused'?'<strong><span style="color:red">'.$res["pausename"].'</span></strong>':_tr($res["status"]);
+            if($res['status'] == 'paused')
+            {
+                $result["agents"][$key]["status"] = '<strong><span style="color:red">'.$res["pausename"].'</span></strong>';
+            } else {
+                $result["agents"][$key]["status"] = _tr($res["status"]);
+            };
             // Поле с длительностью
             $start = NULL;
             if($res['pausestart']) $start = $res['pausestart'];
@@ -152,13 +163,8 @@ function viewOperMonitoring($smarty, $module_name, $local_templates_dir, &$pDB, 
             if($res['dialstart']) $start = $res['dialstart'];
             $result["agents"][$key]['lenght'] = $start?gmdate('H:i:s',time()-strtotime($start)):NULL;
             // Отобразим агента по имени
-            $res_online_agents['<strong>'.$agents[$key].'</strong>'] = $result["agents"][$key];
-        } else {
-            $result["agents"][$key]["status"] = _tr($res["status"]);
-            $result["agents"][$key]['lenght'] = NULL;
-            $res_offline_agents['<strong>'.$agents[$key].'</strong>'] = $result["agents"][$key];
+            $res_online_agents[$sip] = $result["agents"][$key];
         }
-
     }
 //echo '<pre>';var_dump($result);echo '</pre>';
     $res_agents = array_merge($res_online_agents, $res_offline_agents);
